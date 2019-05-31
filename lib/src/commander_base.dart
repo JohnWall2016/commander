@@ -152,13 +152,8 @@ class Command {
 
       int i = 0, argsLen = _args.length;
       _args.forEach((arg) {
-        if (arg.required) {
-          // required arg
-          if (args.isEmpty) {
-            _missingArgument(arg.name);
-          } else {
-            fnArgs[arg.name] = args.removeAt(0);
-          }
+        if (arg.required && args.isEmpty) {
+          _missingArgument(arg.name);
         } else if (arg.variadic) {
           // variadic arg
           if (i != argsLen - 1) {
@@ -168,7 +163,7 @@ class Command {
             args = [];
           }
         } else {
-          // optional arg
+          // required or optional arg
           if (args.isEmpty) {
             fnArgs[arg.name] = null;
           } else {
@@ -284,13 +279,11 @@ class Command {
       if (argsDescription != null && _args.isNotEmpty) {
         var width = _padWidth();
         desc.add('Arguments:');
-        desc.add('');
         _args.forEach((arg) {
           desc.add('  ' +
-                  arg.name.padRight(width) +
-                  '  ' +
-                  argsDescription[arg.name] ??
-              '');
+              arg.name.padRight(width) +
+              '  ' +
+              (argsDescription[arg.name] ?? ''));
         });
         desc.add('');
       }
@@ -499,7 +492,8 @@ class Command {
     if (args.isNotEmpty) {
       name = args[0];
       if (_hasCommandCallback(name)) {
-        _invokeCommandCallback(name, {'args': args.sublist(1), 'unknown': unknown});
+        _invokeCommandCallback(
+            name, {'args': args.sublist(1), 'unknown': unknown});
       } else {
         _invokeCommandCallback('*', {'args': args});
       }
