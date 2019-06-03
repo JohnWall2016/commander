@@ -4,7 +4,9 @@ import 'dart:convert';
 
 import 'package:path/path.dart' as p;
 
-typedef dynamic Callback(Map arguments);
+typedef dynamic CallbackWithMap<T>(Map<String, T> arguments);
+
+typedef dynamic CallbackWithList<T>(List arguments);
 
 String _camelCase(String flag) {
   return flag.split('-').reduce((v, e) {
@@ -98,8 +100,10 @@ class Command {
     return cmd;
   }
 
-  void setArguments(String arguments) =>
-      _parseExpectedArgs(arguments.split(RegExp(' +')));
+  void setArguments(String arguments, [Map<String, String> argsDescr]) {
+    _parseExpectedArgs(arguments.split(RegExp(' +')));
+    _argsDescription = argsDescr;
+  }
 
   _addImplicitHelpCommand() {
     command('help [cmd]', description: 'display help for [cmd]');
@@ -132,11 +136,13 @@ class Command {
     });
   }
 
-  void setAction(Callback fn) {
-    listener(Map arguments) {
-      Map fnArgs = {};
-      List args = arguments['args'] ?? [];
-      List unknown = arguments['unknown'] ?? [];
+  void setAction(fn) {
+    listener(Map<String, dynamic> arguments) {
+      Map<String, dynamic> fnArgsMap = {};
+      List<String> args =
+          arguments['args'] != null ? [...arguments['args']] : [];
+      List<String> unknown =
+          arguments['unknown'] != null ? [...arguments['unknown']] : [];
 
       var parsed = _parseOptions(unknown);
 
@@ -159,21 +165,31 @@ class Command {
           if (i != argsLen - 1) {
             _variadicArgNotLast(arg.name);
           } else {
-            fnArgs[arg.name] = args;
+            fnArgsMap[arg.name] = args;
             args = [];
           }
         } else {
           // required or optional arg
           if (args.isEmpty) {
-            fnArgs[arg.name] = null;
+            fnArgsMap[arg.name] = null;
           } else {
-            fnArgs[arg.name] = args.removeAt(0);
+            fnArgsMap[arg.name] = args.removeAt(0);
           }
         }
         i++;
       });
 
-      fn(fnArgs);
+      if (fn is CallbackWithMap) {
+        fn(fnArgsMap);
+      } else if (fn is CallbackWithList) {
+        var fnArgsList = [];
+        _args.forEach((arg) {
+          fnArgsList.add(fnArgsMap[arg.name]);
+        });
+        fn(fnArgsList);
+      } else {
+        throw 'Not a function with a parameter of Map<String, dynamic> or List<dynamic>.';
+      }
     }
 
     var parent = _parent ?? this;
@@ -327,11 +343,11 @@ class Command {
   Option _optionFor(String arg) =>
       _options.firstWhere((opt) => opt.match(arg), orElse: () => null);
 
-  Map<String, List<Callback>> _callbacks = {};
+  Map<String, List<CallbackWithMap>> _callbacks = {};
 
-  void on(String key, Callback fn) => _setCallback(key, fn);
+  void on(String key, CallbackWithMap fn) => _setCallback(key, fn);
 
-  void _setCallback(String key, Callback fn) {
+  void _setCallback(String key, CallbackWithMap fn) {
     if (!_callbacks.containsKey(key)) {
       _callbacks[key] = [fn];
     } else {
@@ -339,29 +355,30 @@ class Command {
     }
   }
 
-  void _invokeCallback(String key, [Map fnArgs]) {
+  void _invokeCallback(String key, [Map<String, dynamic> fnArgsMap]) {
     var fnList = _callbacks[key];
     if (fnList != null) {
-      fnList.forEach((fn) => fn(fnArgs));
+      fnList.forEach((fn) => fn(fnArgsMap));
     }
   }
 
-  void _setOptionCallback(String option, Callback fn) {
+  void _setOptionCallback(String option, CallbackWithMap fn) {
     _setCallback('option:' + option, fn);
   }
 
   void _setOptionValue(String option, String value) {
+    print('$option $value');
     _invokeCallback('option:' + option, {'arg': value});
   }
 
-  void _setCommandCallback(String command, Callback fn) {
+  void _setCommandCallback(String command, CallbackWithMap fn) {
     _setCallback('command:' + command, fn);
   }
 
   bool _hasCommandCallback(String command) =>
       _callbacks.containsKey('command:' + command);
 
-  void _invokeCommandCallback(String command, Map args) {
+  void _invokeCommandCallback(String command, Map<String, dynamic> args) {
     _invokeCallback('command:' + command, args);
   }
 
@@ -374,7 +391,7 @@ class Command {
   operator [](String name) => _internalMap[name];
 
   void option(String flags, String description,
-      {Callback fn, dynamic defaultValue}) {
+      {CallbackWithMap fn, dynamic defaultValue}) {
     var option = Option(flags, description);
     var oname = option.name;
     var name = option.attributeName;
@@ -417,8 +434,8 @@ class Command {
     return result;
   }
 
-  Map<String, List> _parseOptions(List argv) {
-    var args = [], unknownOptions = [];
+  Map<String, List<String>> _parseOptions(List<String> argv) {
+    var args = <String>[], unknownOptions = <String>[];
     var len = argv.length;
     bool literal = false;
     String arg;
@@ -486,7 +503,7 @@ class Command {
     return {'args': args, 'unknown': unknownOptions};
   }
 
-  void _parseArgs(List args, List unknown) {
+  void _parseArgs(List<String> args, List<String> unknown) {
     String name;
 
     if (args.isNotEmpty) {
@@ -527,9 +544,8 @@ class Command {
 
   String get version => _version;
 
-  void setDescription(String descr, [Map<String, String> argsDescr]) {
+  void setDescription(String descr) {
     _description = descr;
-    _argsDescription = argsDescr;
   }
 
   String get description => _description;
@@ -630,18 +646,18 @@ class Command {
     return ret;
   }
 
-  void parse(List<String> argv) {
+  void parse(List<String> args) {
     if (_executables) _addImplicitHelpCommand();
 
     _name ??= p.basenameWithoutExtension(Platform.script.path);
 
-    if (_executables && _defaultExecutable == null && argv.isEmpty) {
-      argv.add('--help');
+    if (_executables && _defaultExecutable == null && args.isEmpty) {
+      args.add('--help');
     }
 
-    var parsed = _parseOptions(_normalize(argv));
-    var args = parsed['args'];
+    var parsed = _parseOptions(_normalize(args));
+    var argv = parsed['args'];
 
-    _parseArgs(args, parsed['unknown']);
+    _parseArgs(argv, parsed['unknown']);
   }
 }
