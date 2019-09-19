@@ -359,6 +359,8 @@ class Command {
     var fnList = _callbacks[key];
     if (fnList != null) {
       fnList.forEach((fn) => fn(fnArgsMap));
+    } else {
+      print('This command can\'t be executed');
     }
   }
 
